@@ -1,0 +1,18 @@
+[Unit]
+Description=kismet-push - envia os Wi-Fi Clients do Kismet para a API central
+After=network-online.target kismet.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kismet
+WorkingDirectory=/opt/kismet-push
+EnvironmentFile=/opt/kismet-push/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
