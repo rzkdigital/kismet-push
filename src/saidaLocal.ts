@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from './config.js';
+import { carimboArquivo, dataPasta } from './tempo.js';
 import type { Payload, ResultadoEnvio } from './types.js';
 
 /** A pasta local esta valendo como destino de lote? */
@@ -30,12 +31,16 @@ export async function salvarLocalmente(
     ? JSON.stringify(payload, null, 2)
     : JSON.stringify(payload);
 
-  const nome = `${payload.coletado_em.replace(/[:.]/g, '-')}_${payload.id_lote.slice(0, 8)}.json`;
-  const destino = path.join(config.saidaLocal.dir, nome);
+  // Pasta e nome saem da hora da COLETA, nao da hora da gravacao: um lote
+  // atrasado pela fila cai no dia em que foi coletado, nao no dia em que subiu.
+  const coletadoEm = new Date(payload.coletado_em);
+  const pasta = path.join(config.saidaLocal.dir, dataPasta(coletadoEm));
+  const nome = `${carimboArquivo(coletadoEm)}_${payload.id_lote.slice(0, 8)}.json`;
+  const destino = path.join(pasta, nome);
   const temporario = `${destino}.tmp`;
 
   try {
-    await fs.mkdir(config.saidaLocal.dir, { recursive: true });
+    await fs.mkdir(pasta, { recursive: true });
     await fs.writeFile(temporario, conteudo, 'utf8');
     await fs.rename(temporario, destino);
 
@@ -56,10 +61,18 @@ export async function salvarLocalmente(
   }
 }
 
+/** Conta os lotes salvos, incluindo os que estao nas subpastas por data. */
 export async function contarLotesSalvos(): Promise<number> {
   try {
-    const nomes = await fs.readdir(config.saidaLocal.dir);
-    return nomes.filter((n) => n.endsWith('.json')).length;
+    const itens = await fs.readdir(config.saidaLocal.dir, { withFileTypes: true });
+    let total = itens.filter((i) => i.isFile() && i.name.endsWith('.json')).length;
+
+    for (const item of itens.filter((i) => i.isDirectory())) {
+      const dentro = await fs.readdir(path.join(config.saidaLocal.dir, item.name)).catch(() => []);
+      total += dentro.filter((n) => n.endsWith('.json')).length;
+    }
+
+    return total;
   } catch {
     return 0;
   }

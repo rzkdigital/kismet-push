@@ -24,9 +24,21 @@ const modoSaida = (v: string | undefined): ModoSaidaLocal => {
   return escolhido === 'sempre' || escolhido === 'nunca' ? escolhido : 'auto';
 };
 
+/** Cai para UTC se o TIMEZONE do .env nao existir, em vez de derrubar o processo. */
+const tzValida = (v: string | undefined): string => {
+  const tz = v || 'America/Sao_Paulo';
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+    return tz;
+  } catch {
+    return 'UTC';
+  }
+};
+
 export interface Config {
   idPonto: number;
   servidor: number;
+  timezone: string;
   kismet: {
     url: string;
     apiKey: string;
@@ -60,6 +72,8 @@ export interface Config {
 export const config: Config = {
   idPonto: num(process.env.ID_PONTO, 0),
   servidor: num(process.env.SERVIDOR, 0),
+  // Fuso usado em todo horario que o servico gera (payload, logs, nomes de arquivo).
+  timezone: tzValida(process.env.TIMEZONE),
 
   kismet: {
     url: (process.env.KISMET_URL || 'http://127.0.0.1:2501').replace(/\/+$/, ''),
@@ -127,6 +141,9 @@ export function validarConfig(): string[] {
   }
   if (!config.upstream.url && config.saidaLocal.modo !== 'nunca') {
     avisos.push(`sem UPSTREAM_URL — os lotes vao para a pasta ${config.saidaLocal.dir}`);
+  }
+  if (process.env.TIMEZONE && config.timezone === 'UTC' && process.env.TIMEZONE !== 'UTC') {
+    avisos.push(`TIMEZONE "${process.env.TIMEZONE}" nao reconhecido, usando UTC`);
   }
   if (!config.kismet.apiKey && !config.kismet.user) {
     avisos.push('Kismet sem credencial (KISMET_API_KEY ou KISMET_USER/KISMET_PASSWORD)');

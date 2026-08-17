@@ -52,7 +52,7 @@ Em produção use o systemd: [deploy/kismet-push.service](deploy/kismet-push.ser
   "id_ponto": 10,
   "servidor": 12321,
   "id_lote": "e1397477-9c84-41da-a844-e02f92d2f624", // uuid do lote, use para idempotência
-  "coletado_em": "2026-08-03T19:40:46.599Z",
+  "coletado_em": "2026-08-07T12:26:08.274-03:00",    // fuso do TIMEZONE, com offset explícito
   "janela": { "inicio": "...", "fim": "..." },       // intervalo consultado no Kismet
   "total_registros": 2,
   "registros": [ /* devices do Kismet, exatamente como vieram */ ]
@@ -87,7 +87,8 @@ SAIDA_LOCAL_IDENTADO=true   # false grava minificado
 | `sempre` | grava uma cópia local **e** manda para a API |
 | `nunca` | só a API |
 
-Um arquivo por lote, nomeado `<coletado_em>_<id_lote>.json`. Como o nome usa o `id_lote`, reprocessar
+Os lotes são organizados em subpasta por dia da coleta: `data/lotes/07-08-2026/`, um arquivo por
+lote nomeado `<carimbo-local>_<id_lote>.json`. Como o nome usa o `id_lote`, reprocessar
 o mesmo lote sobrescreve o arquivo em vez de duplicar. A pasta **não** é podada automaticamente — é
 material de análise, some só quando você apagar. Com 1 lote por minuto e registros brutos, conte com
 alguns MB por minuto em ponto movimentado; olhe o espaço em disco se for deixar rodando dias.
@@ -140,6 +141,25 @@ sem compressão na hora, loga o aviso e passa a mandar plano até reiniciar — 
 
 A fila offline continua gravando **JSON puro** em disco: a compressão acontece só na hora do envio,
 então dá para inspecionar um lote pendente com `cat`/`jq` normalmente.
+
+## Fuso horário
+
+Todo horário que o serviço **gera** — `coletado_em`, `janela`, os campos `em` do `/status` e do log,
+o nome do arquivo e da pasta de lotes — sai no fuso de `TIMEZONE` (padrão `America/Sao_Paulo`), em
+ISO 8601 com offset explícito: `2026-08-07T12:26:08.274-03:00`.
+
+O offset vai junto de propósito. Sem ele, "12:26" é ambíguo e qualquer parser assume o fuso dele;
+com ele, o instante é exato para `Date.parse`, `timestamptz` e afins, e ainda assim a hora que
+aparece é a de São Paulo. O offset é calculado pelo `Intl` a cada carimbo, não fixado em -03:00 —
+se o Brasil voltar a ter horário de verão, ou o `TIMEZONE` for outro, continua correto sozinho.
+Independe do fuso do sistema operacional do terminal.
+
+Duas exceções, ambas propositais:
+
+- os `first_time`/`last_time`/`mod_time` **dentro dos registros** continuam epoch em segundos, como
+  o Kismet gera — são dado bruto, e epoch não tem ambiguidade de fuso;
+- o nome dos arquivos da fila offline (`data/spool/pendentes/`) continua em UTC, porque a ordem de
+  envio é a ordem alfabética dos nomes e UTC nunca anda para trás.
 
 ## Rotas locais
 

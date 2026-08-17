@@ -11,6 +11,7 @@ import {
 import { drenar, enfileirar, estatisticas } from './spool.js';
 import { despachar, destinoAtual } from './despacho.js';
 import { podarRegistros } from './limpeza.js';
+import { isoLocal, isoLocalDeEpoch } from './tempo.js';
 import { contarLotesSalvos } from './saidaLocal.js';
 import { gzipEfetivo } from './uploader.js';
 import type {
@@ -77,6 +78,13 @@ function janelaDeColeta(): number {
   return Math.max(0, estado.ultimoTimestamp - config.kismet.overlapSeconds);
 }
 
+function ignorarMarca(marca: string): boolean {
+  if (marca === 'Tuya Smart Inc.' || marca === 'Raspberry Pi Foundation') {
+    return true
+  }
+  return false
+}
+
 async function buscarDevices(desde: number, logger?: FastifyBaseLogger): Promise<KismetDevice[]> {
   try {
     return await listarDevices(desde, { usarRegex: estado.usarRegex });
@@ -119,6 +127,10 @@ export async function coletar(
         return false;
       }
 
+      if (ignorarMarca(d['kismet.device.base.manuf'] as string)) {
+        return false
+      }
+
       const mac = normalizarMac(d['kismet.device.base.macaddr']);
       if (mac && ignorados.has(mac)) {
         descartes.interface_kismet++;
@@ -146,7 +158,7 @@ export async function coletar(
 
     if (registros.length === 0 && !config.enviarLoteVazio && !opcoes.forcado) {
       const vazio: ResumoColeta = {
-        em: new Date().toISOString(),
+        em: isoLocal(),
         desde,
         recebidos: brutos.length,
         registros: 0,
@@ -163,7 +175,7 @@ export async function coletar(
     const fila = await enfileirar(payload);
 
     const resumo: ResumoColeta = {
-      em: new Date().toISOString(),
+      em: isoLocal(),
       desde,
       recebidos: brutos.length,
       registros: registros.length,
@@ -183,7 +195,7 @@ export async function coletar(
     const mensagem = (err as Error).message;
     logger?.error({ err: mensagem }, 'falha na coleta');
     estado.ultimaColeta = {
-      em: new Date().toISOString(),
+      em: isoLocal(),
       desde,
       recebidos: 0,
       registros: 0,
@@ -202,10 +214,10 @@ export function montarPayload(registros: KismetDevice[], desde: number): Payload
     id_ponto: config.idPonto,
     servidor: config.servidor,
     id_lote: randomUUID(),
-    coletado_em: new Date().toISOString(),
+    coletado_em: isoLocal(),
     janela: {
-      inicio: new Date(desde * 1000).toISOString(),
-      fim: new Date().toISOString(),
+      inicio: isoLocalDeEpoch(desde),
+      fim: isoLocal(),
     },
     total_registros: registros.length,
     registros,
@@ -219,7 +231,7 @@ export async function drenarFila(logger?: FastifyBaseLogger): Promise<SaidaDrena
   estado.drenando = true;
   try {
     const resultado = await drenar(despachar, logger);
-    estado.ultimoEnvio = { em: new Date().toISOString(), ...resultado };
+    estado.ultimoEnvio = { em: isoLocal(), ...resultado };
     if (resultado.enviados > 0 || resultado.falhas > 0 || resultado.descartados > 0) {
       logger?.info(resultado, 'drenagem da fila concluida');
     }

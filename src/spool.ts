@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from './config.js';
+import { isoLocal } from './tempo.js';
 import type { EnviarLote, Envelope, EstatisticasFila, Payload, ResultadoDrenagem } from './types.js';
 
 const dirPendentes = (): string => path.join(config.spool.dir, 'pendentes');
@@ -34,6 +35,8 @@ async function gravarAtomico(destino: string, envelope: Envelope): Promise<void>
 /** Grava o lote em disco antes de qualquer tentativa de envio. */
 export async function enfileirar(payload: Payload): Promise<{ arquivo: string; registros: number }> {
   const agora = new Date();
+  // O nome do arquivo da fila fica em UTC de proposito: garante que a ordem
+  // alfabetica seja a ordem de envio mesmo se o fuso mudar de offset.
   const nome = [
     agora.toISOString().replace(/[:.]/g, '-'),
     String(seq++).padStart(4, '0'),
@@ -42,7 +45,7 @@ export async function enfileirar(payload: Payload): Promise<{ arquivo: string; r
 
   const envelope: Envelope = {
     id_lote: payload.id_lote,
-    criado_em: agora.toISOString(),
+    criado_em: isoLocal(agora),
     tentativas: 0,
     ultimo_erro: null,
     payload,
